@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Shield, Lock, ArrowLeft } from 'lucide-react';
+import { Shield, Lock } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 
 export function AdminLogin() {

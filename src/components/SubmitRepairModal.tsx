@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, Camera, Check, Wrench } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { ISSUE_TYPES, ROOMS } from '@/lib/constants';
-import { getActiveTickets, getEstimatedTime, getQueuePosition } from '@/lib/queue';
+import { getActiveTickets, getEstimatedTime } from '@/lib/queue';
 import type { IssueType } from '@/types';
 
 interface SubmitRepairModalProps {

@@ -104,7 +104,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const next = prev.map((tk) =>
         tk.id === ticketId ? { ...tk, status: 'in_progress' as const, queueOrder: 1 } : tk,
       );
-      const started = next.find((tk) => tk.id === ticketId);
       const others = next.filter((tk) => tk.id !== ticketId && tk.status !== 'in_progress');
       let order = 2;
       others.forEach((tk) => {
@@ -227,6 +226,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useApp(): AppContextValue {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error('useApp must be used within AppProvider');

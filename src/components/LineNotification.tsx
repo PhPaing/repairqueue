@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { MessageCircle, X } from 'lucide-react';
+import { MessageCircle } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { formatTimeAgo } from '@/lib/queue';
 

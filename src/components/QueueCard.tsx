@@ -1,4 +1,4 @@
-import { Clock, Wrench, ChevronRight, User } from 'lucide-react';
+import { Clock, Wrench, ChevronRight } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { TECHNICIAN_MAP } from '@/lib/constants';
 import {

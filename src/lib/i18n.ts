@@ -4,9 +4,9 @@ type Dict = Record<string, string>;
 
 const en: Dict = {
   appTitle: 'Condo Repair Queue',
-  appSubtitle: 'Add-on for YourBanice',
+  appSubtitle: 'Add-on for Urbanice',
   bannerText:
-    'This is a free add-on board to reduce juristic LINE questions. We still use YourBanice for main announcements.',
+    'This is a free add-on board to reduce juristic LINE questions. We still use Urbanice for main announcements.',
   youAreQ: 'You are Q',
   inQueue: 'in queue',
   estimated: 'Estimated',
@@ -102,9 +102,9 @@ const en: Dict = {
 
 const th: Dict = {
   appTitle: 'ระบบคิวซ่อม',
-  appSubtitle: 'เสริม YourBanice',
+  appSubtitle: 'เสริม Urbanice',
   bannerText:
-    'ฟรี ใช้เสริม YourBanice เท่านั้น ไม่ได้แทนที่ เพื่อลดการถามคิวผ่าน LINE ของนิติบุคคล',
+    'ฟรี ใช้เสริม Urbanice เท่านั้น ไม่ได้แทนที่ เพื่อลดการถามคิวผ่าน LINE ของนิติบุคคล',
   youAreQ: 'คิวของคุณ',
   inQueue: 'ในคิว',
   estimated: 'ประมาณ',

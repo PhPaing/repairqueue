@@ -1,5 +1,4 @@
 import { Languages } from 'lucide-react';
-import type { Language } from '@/types';
 import { useApp } from '@/context/AppContext';
 
 export function LanguageToggle() {
