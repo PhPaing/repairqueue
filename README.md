@@ -4,7 +4,7 @@ A condo maintenance request app. Residents report problems (air con, door lock,
 water pipe, electrical, plumbing, other) and see where they are in the queue.
 Admins log in to assign technicians and update ticket status.
 
-**Live demo:** https://<your-site>.netlify.app
+**Live demo:** https://repairqueue.netlify.app/
 
 ## Features
 - Resident view with a live queue position for each ticket
