@@ -32,6 +32,17 @@ export const ISSUE_EMOJI: Record<IssueType, string> = {
 
 export const ADMIN_PASSWORD = '1234';
 
+/**
+ * Juristic contact channels used by "Contact Juristic to Cancel".
+ * - LINE_OA_ID: your LINE Official Account id including "@" (e.g. '@mycondo').
+ *   Leave '' to open LINE's share sheet so the resident picks the juristic chat.
+ * - PHONE: e.g. '+66212345678'. Leave '' to hide the call button.
+ */
+export const JURISTIC_LINE_OA_ID = '';
+export const JURISTIC_PHONE = '';
+
+export const MAX_PHOTOS = 4;
+
 export const STORAGE_KEY = 'condo-repair-queue-v1';
 export const LANG_KEY = 'condo-repair-queue-lang';
 
@@ -49,6 +60,12 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     technicianId: 'tech_chai',
     isYou: false,
     photoEmoji: '❄️',
+    title: '',
+    photos: [],
+    notes: [],
+    priority: 'normal',
+    scheduledDate: null,
+    history: [],
   },
   {
     id: 'ticket-2',
@@ -61,6 +78,12 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     technicianId: null,
     isYou: true,
     photoEmoji: '🔒',
+    title: '',
+    photos: [],
+    notes: [],
+    priority: 'normal',
+    scheduledDate: null,
+    history: [],
   },
   {
     id: 'ticket-3',
@@ -73,6 +96,12 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     technicianId: null,
     isYou: false,
     photoEmoji: '🚿',
+    title: '',
+    photos: [],
+    notes: [],
+    priority: 'normal',
+    scheduledDate: null,
+    history: [],
   },
   {
     id: 'ticket-4',
@@ -85,5 +114,11 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     technicianId: null,
     isYou: false,
     photoEmoji: '💡',
+    title: '',
+    photos: [],
+    notes: [],
+    priority: 'normal',
+    scheduledDate: null,
+    history: [],
   },
 ];

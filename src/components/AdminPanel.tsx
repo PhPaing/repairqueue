@@ -11,6 +11,8 @@ import {
   Clock,
   CheckCircle,
   Users,
+  Pencil,
+  CalendarDays,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { TECHNICIANS, TECHNICIAN_MAP, ISSUE_EMOJI } from '@/lib/constants';
@@ -21,9 +23,13 @@ import {
 } from '@/lib/queue';
 import type { RepairTicket } from '@/types';
 import { NotificationList } from './LineNotification';
+import { NoteHistory } from './TicketActions';
+import { AdminCoreEditModal } from './AdminCoreEditModal';
+import { formatDay, priorityLabel } from '@/lib/history';
 
 const STATUS_KEY: Record<string, string> = {
   in_progress: 'statusInProgress',
+  assigned: 'statusAssigned',
   queued: 'statusQueued',
   waiting: 'statusWaiting',
   completed: 'statusCompleted',
@@ -39,13 +45,17 @@ export function AdminPanel() {
     completeRepair,
     closeTicket,
     moveTicket,
+    reorderTickets,
     assignTechnician,
     startRepair,
     resetData,
     notifications,
+    cancelLog,
   } = useApp();
   const [confirmComplete, setConfirmComplete] = useState<string | null>(null);
   const [showReset, setShowReset] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const active = getActiveTickets(tickets);
   const completed = tickets.filter(
@@ -95,9 +105,31 @@ export function AdminPanel() {
         </div>
       )}
 
+      {/* Cancellations made by residents (with reasons) */}
+      {cancelLog.length > 0 && (
+        <div className="mb-4">
+          <p className={`mb-2 text-xs font-semibold text-neutral-500 ${lang === 'th' ? 'font-thai' : ''}`}>
+            {t('adminCancelledTitle')} ({cancelLog.length})
+          </p>
+          <div className="space-y-2">
+            {cancelLog.slice(0, 5).map((c) => (
+              <div key={c.id} className="rounded-xl border border-red-100 bg-red-50 p-2.5">
+                <p className="text-xs font-bold text-neutral-700">
+                  {c.room} · Q{c.queueNumber} · {ISSUE_EMOJI[c.issueType]}
+                  <span className="ml-1 font-medium text-neutral-400">{formatTimeAgo(c.timestamp, lang)}</span>
+                </p>
+                <p className={`mt-0.5 break-words text-xs text-neutral-600 ${lang === 'th' ? 'font-thai' : ''}`}>
+                  {t('cancelledReasonLabel')}: {c.reason}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Queue reorder hint */}
       <p className={`mb-2 text-xs font-medium text-neutral-400 ${lang === 'th' ? 'font-thai' : ''}`}>
-        {t('dragToReorder')}
+        {t('dragToReorder')} · {t('dragHint')}
       </p>
 
       {/* Ticket list */}
@@ -123,10 +155,16 @@ export function AdminPanel() {
               onMove={moveTicket}
               onAssign={assignTechnician}
               onStart={startRepair}
+              onReorder={reorderTickets}
+              dragId={dragId}
+              setDragId={setDragId}
+              onEditCore={setEditingId}
             />
           ))
         )}
       </div>
+
+      {editingId && <AdminCoreEditModal ticketId={editingId} onClose={() => setEditingId(null)} />}
 
       {/* Reset confirm modal */}
       {showReset && (
@@ -224,6 +262,10 @@ interface AdminTicketRowProps {
   onMove: (id: string, direction: 'up' | 'down') => void;
   onAssign: (id: string, techId: string) => void;
   onStart: (id: string) => void;
+  onReorder: (sourceId: string, targetId: string) => void;
+  dragId: string | null;
+  setDragId: (id: string | null) => void;
+  onEditCore: (id: string) => void;
 }
 
 function AdminTicketRow({
@@ -237,14 +279,24 @@ function AdminTicketRow({
   onMove,
   onAssign,
   onStart,
+  onReorder,
+  dragId,
+  setDragId,
+  onEditCore,
 }: AdminTicketRowProps) {
   const { tickets, t, lang } = useApp();
+  const [isOver, setIsOver] = useState(false);
   const position = getQueuePosition(ticket, tickets);
   const isActive =
     ticket.status === 'in_progress' ||
+    ticket.status === 'assigned' ||
     ticket.status === 'queued' ||
     ticket.status === 'waiting';
   const tech = ticket.technicianId ? TECHNICIAN_MAP[ticket.technicianId] : null;
+
+  // Drag & drop reorder (desktop). The in-progress repair stays pinned at the top.
+  const canDrag = isActive && ticket.status !== 'in_progress';
+  const dragging = dragId !== null && dragId !== ticket.id;
 
   const handleComplete = () => {
     if (confirmComplete === ticket.id) {
@@ -259,7 +311,33 @@ function AdminTicketRow({
 
   return (
     <div
+      draggable={canDrag}
+      onDragStart={(e) => {
+        if (!canDrag) return;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', ticket.id);
+        setDragId(ticket.id);
+      }}
+      onDragEnd={() => {
+        setDragId(null);
+        setIsOver(false);
+      }}
+      onDragOver={(e) => {
+        if (canDrag && dragging) {
+          e.preventDefault();
+          setIsOver(true);
+        }
+      }}
+      onDragLeave={() => setIsOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsOver(false);
+        if (canDrag && dragId && dragId !== ticket.id) onReorder(dragId, ticket.id);
+        setDragId(null);
+      }}
       className={`rounded-2xl border bg-white p-3.5 shadow-sm transition-all ${
+        isOver ? 'ring-2 ring-primary-300' : ''
+      } ${dragId === ticket.id ? 'opacity-50' : ''} ${
         ticket.status === 'in_progress'
           ? 'border-info-200 ring-1 ring-info-100'
           : ticket.isYou
@@ -271,7 +349,11 @@ function AdminTicketRow({
         {/* Drag handle + queue number */}
         {isActive ? (
           <div className="flex shrink-0 flex-col items-center gap-1">
-            <GripVertical size={14} className="text-neutral-300" />
+            <GripVertical
+              size={14}
+              className={canDrag ? 'cursor-grab text-neutral-400' : 'text-neutral-200'}
+              aria-hidden
+            />
             <div className="flex h-10 w-10 flex-col items-center justify-center rounded-lg bg-primary-50">
               <span className="text-[8px] font-semibold uppercase text-primary-500">Q</span>
               <span className="text-base font-extrabold leading-none text-primary-600">
@@ -307,6 +389,40 @@ function AdminTicketRow({
             {formatTimeAgo(ticket.reportedAt, lang)}
             {tech && ` • ${tech.avatar} ${tech.name}`}
           </p>
+
+          {(ticket.priority !== 'normal' || ticket.scheduledDate) && (
+            <p className={`mt-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold ${lang === 'th' ? 'font-thai' : ''}`}>
+              {ticket.priority !== 'normal' && (
+                <span className={`rounded-md px-1.5 py-0.5 ${ticket.priority === 'urgent' ? 'bg-red-100 text-red-600' : 'bg-primary-100 text-primary-700'}`}>
+                  {priorityLabel(ticket.priority, lang)}
+                </span>
+              )}
+              {ticket.scheduledDate && (
+                <span className="flex items-center gap-1 text-neutral-500">
+                  <CalendarDays size={11} />
+                  {formatDay(ticket.scheduledDate, lang)}
+                </span>
+              )}
+            </p>
+          )}
+          {ticket.title && (
+            <p className={`mt-1 text-sm font-semibold text-neutral-800 ${lang === 'th' ? 'font-thai' : ''}`}>
+              {ticket.title}
+            </p>
+          )}
+          {ticket.description && (
+            <p className={`mt-0.5 break-words text-xs text-neutral-500 ${lang === 'th' ? 'font-thai' : ''}`}>
+              {ticket.description}
+            </p>
+          )}
+          {ticket.photos.length > 0 && (
+            <div className="mt-1.5 flex gap-1.5 overflow-x-auto scrollbar-hide">
+              {ticket.photos.map((src, i) => (
+                <img key={i} src={src} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-neutral-200 object-cover" />
+              ))}
+            </div>
+          )}
+          <NoteHistory ticket={ticket} />
 
           {/* Action buttons */}
           {isActive && (
@@ -374,6 +490,15 @@ function AdminTicketRow({
                   {confirmComplete === ticket.id ? t('confirmComplete') : t('complete')}
                 </button>
               )}
+
+              {/* Edit core fields (audit-logged) */}
+              <button
+                onClick={() => onEditCore(ticket.id)}
+                className={`flex items-center gap-1 rounded-lg border border-primary-200 bg-primary-50 px-2 py-1 text-[11px] font-semibold text-primary-700 transition-colors hover:bg-primary-100 ${lang === 'th' ? 'font-thai' : ''}`}
+              >
+                <Pencil size={12} />
+                {t('adminEditCore')}
+              </button>
 
               {/* Close ticket */}
               <button

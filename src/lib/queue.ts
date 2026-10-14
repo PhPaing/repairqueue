@@ -1,7 +1,7 @@
 import type { Language, LineNotification, RepairTicket, RepairStats } from '@/types';
 import { t } from './i18n';
 
-const ACTIVE_STATUSES = new Set(['in_progress', 'queued', 'waiting']);
+const ACTIVE_STATUSES = new Set(['in_progress', 'assigned', 'queued', 'waiting']);
 
 export function getActiveTickets(tickets: RepairTicket[]): RepairTicket[] {
   return tickets
@@ -46,7 +46,7 @@ export function getPeopleAhead(queuePosition: number): number {
 
 export function computeStats(tickets: RepairTicket[]): RepairStats {
   const active = getActiveTickets(tickets);
-  const queued = active.filter((tk) => tk.status === 'queued' || tk.status === 'waiting').length;
+  const queued = active.filter((tk) => tk.status === 'queued' || tk.status === 'waiting' || tk.status === 'assigned').length;
   const avgWait = active.length > 0 ? Math.round((active.length * 0.8) * 10) / 10 : 0;
   const completedToday = getCompletedToday(tickets);
   return {

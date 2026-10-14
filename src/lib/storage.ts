@@ -1,27 +1,51 @@
-import type { Language, LineNotification, RepairTicket } from '@/types';
+import type { CancelRecord, Language, LineNotification, RepairTicket } from '@/types';
 import { INITIAL_TICKETS, LANG_KEY, STORAGE_KEY } from './constants';
 
-interface StoredData {
+export interface StoredData {
   tickets: RepairTicket[];
   notifications: LineNotification[];
+  cancelLog: CancelRecord[];
+}
+
+/** Fill in fields added after v1 so existing saved data keeps working. */
+export function normalizeTicket(raw: Partial<RepairTicket> & { id: string }): RepairTicket {
+  return {
+    ...(raw as RepairTicket),
+    technicianId: raw.technicianId || null,
+    title: raw.title ?? '',
+    photos: Array.isArray(raw.photos) ? raw.photos : [],
+    notes: Array.isArray(raw.notes) ? raw.notes : [],
+    priority: raw.priority ?? 'normal',
+    scheduledDate: raw.scheduledDate ?? null,
+    history: Array.isArray(raw.history) ? raw.history : [],
+  };
+}
+
+export function parseStored(raw: string | null): StoredData | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredData>;
+    if (parsed.tickets && Array.isArray(parsed.tickets)) {
+      return {
+        tickets: parsed.tickets.map(normalizeTicket),
+        notifications: parsed.notifications ?? [],
+        cancelLog: parsed.cancelLog ?? [],
+      };
+    }
+  } catch {
+    // ignore corrupt data
+  }
+  return null;
 }
 
 export function loadData(): StoredData {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as StoredData;
-      if (parsed.tickets && Array.isArray(parsed.tickets)) {
-        return {
-          tickets: parsed.tickets,
-          notifications: parsed.notifications ?? [],
-        };
-      }
-    }
+    const stored = parseStored(localStorage.getItem(STORAGE_KEY));
+    if (stored) return stored;
   } catch {
     // fall through to defaults
   }
-  return { tickets: INITIAL_TICKETS, notifications: [] };
+  return { tickets: INITIAL_TICKETS, notifications: [], cancelLog: [] };
 }
 
 export function saveData(data: StoredData): void {

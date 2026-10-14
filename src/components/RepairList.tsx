@@ -1,11 +1,15 @@
-import { Clock } from 'lucide-react';
+import { CalendarDays, Clock } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { TECHNICIAN_MAP, ISSUE_EMOJI } from '@/lib/constants';
 import { formatTimeAgo, getActiveTickets, getQueuePosition } from '@/lib/queue';
 import type { RepairStatus, RepairTicket } from '@/types';
+import { getTechnicianName } from '@/lib/permissions';
+import { formatDay, priorityLabel } from '@/lib/history';
+import { NoteHistory, TicketActions } from '@/components/TicketActions';
 
 const STATUS_STYLES: Record<RepairStatus, { bg: string; text: string; dot: string }> = {
   in_progress: { bg: 'bg-info-100', text: 'text-info-700', dot: 'bg-info-500' },
+  assigned: { bg: 'bg-info-50', text: 'text-info-700', dot: 'bg-info-400' },
   queued: { bg: 'bg-primary-100', text: 'text-primary-700', dot: 'bg-primary-500' },
   waiting: { bg: 'bg-neutral-100', text: 'text-neutral-600', dot: 'bg-neutral-400' },
   completed: { bg: 'bg-accent-100', text: 'text-accent-700', dot: 'bg-accent-500' },
@@ -14,6 +18,7 @@ const STATUS_STYLES: Record<RepairStatus, { bg: string; text: string; dot: strin
 
 const STATUS_KEY: Record<RepairStatus, string> = {
   in_progress: 'statusInProgress',
+  assigned: 'statusAssigned',
   queued: 'statusQueued',
   waiting: 'statusWaiting',
   completed: 'statusCompleted',
@@ -52,8 +57,13 @@ export function RepairList() {
 function RepairCard({ ticket }: { ticket: RepairTicket }) {
   const { tickets, t, lang } = useApp();
   const position = getQueuePosition(ticket, tickets);
-  const isActive = ticket.status === 'in_progress' || ticket.status === 'queued' || ticket.status === 'waiting';
+  const isActive =
+    ticket.status === 'in_progress' ||
+    ticket.status === 'assigned' ||
+    ticket.status === 'queued' ||
+    ticket.status === 'waiting';
   const tech = ticket.technicianId ? TECHNICIAN_MAP[ticket.technicianId] : null;
+  const technicianName = getTechnicianName(ticket);
   const styles = STATUS_STYLES[ticket.status];
 
   return (
@@ -92,10 +102,31 @@ function RepairCard({ ticket }: { ticket: RepairTicket }) {
             {ISSUE_EMOJI[ticket.issueType]} {t(`issue${ticket.issueType.charAt(0).toUpperCase() + ticket.issueType.slice(1).replace(/_./g, (m) => m[1].toUpperCase())}`)}
           </p>
 
+          {ticket.title && (
+            <p className={`mt-0.5 text-sm font-semibold text-neutral-800 ${lang === 'th' ? 'font-thai' : ''}`}>
+              {ticket.title}
+            </p>
+          )}
+
           {ticket.description && (
-            <p className={`mt-1 truncate text-xs text-neutral-400 ${lang === 'th' ? 'font-thai' : ''}`}>
+            <p
+              className={`mt-1 text-xs text-neutral-400 ${ticket.isYou ? 'break-words' : 'truncate'} ${lang === 'th' ? 'font-thai' : ''}`}
+            >
               {ticket.description}
             </p>
+          )}
+
+          {ticket.photos.length > 0 && (
+            <div className="mt-2 flex gap-1.5 overflow-x-auto scrollbar-hide">
+              {ticket.photos.map((src, i) => (
+                <img
+                  key={i}
+                  src={src}
+                  alt=""
+                  className="h-12 w-12 shrink-0 rounded-lg border border-neutral-200 object-cover"
+                />
+              ))}
+            </div>
           )}
 
           {/* Footer row */}
@@ -108,13 +139,31 @@ function RepairCard({ ticket }: { ticket: RepairTicket }) {
               <Clock size={11} />
               {formatTimeAgo(ticket.reportedAt, lang)}
             </span>
-            {tech && (
+            {ticket.priority !== 'normal' && (
+              <span
+                className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                  ticket.priority === 'urgent' ? 'bg-red-100 text-red-600' : 'bg-primary-100 text-primary-700'
+                } ${lang === 'th' ? 'font-thai' : ''}`}
+              >
+                {priorityLabel(ticket.priority, lang)}
+              </span>
+            )}
+            {ticket.scheduledDate && (
+              <span className={`flex items-center gap-1 text-[11px] font-medium text-neutral-500 ${lang === 'th' ? 'font-thai' : ''}`}>
+                <CalendarDays size={11} />
+                {t('fieldScheduledDate')}: {formatDay(ticket.scheduledDate, lang)}
+              </span>
+            )}
+            {tech && technicianName && (
               <span className="flex items-center gap-1 text-[11px] text-neutral-500">
                 <span>{tech.avatar}</span>
-                {tech.name}
+                {technicianName}
               </span>
             )}
           </div>
+
+          {ticket.isYou && <NoteHistory ticket={ticket} />}
+          <TicketActions ticket={ticket} />
         </div>
       </div>
     </div>
