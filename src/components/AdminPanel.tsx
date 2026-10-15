@@ -58,8 +58,10 @@ export function AdminPanel() {
     resetData,
     notifications,
     cancelLog,
+    setViewAsRoom,
   } = useApp();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [roomFilter, setRoomFilter] = useState('all');
   const [fixedId, setFixedId] = useState<string | null>(null);
   const [closeId, setCloseId] = useState<string | null>(null);
   const [showReset, setShowReset] = useState(false);
@@ -75,7 +77,9 @@ export function AdminPanel() {
   const queue = getQueueForDate(tickets, date);
   const waitingConfirm = tickets.filter((tk) => tk.repairDate === date && tk.status === 'waiting_confirm');
   const done = tickets.filter((tk) => tk.repairDate === date && (tk.status === 'completed' || tk.status === 'closed'));
-  const ordered = [...queue, ...waitingConfirm, ...done];
+  // Admin sees every room; the dropdown only narrows the list (queue positions stay global).
+  const ordered = [...queue, ...waitingConfirm, ...done].filter((tk) => roomFilter === 'all' || tk.room === roomFilter);
+  const roomOptions = [...new Set(tickets.map((tk) => tk.room))].sort();
   const countFor = (d: string) => tickets.filter((tk) => tk.repairDate === d && isOpenTicket(tk)).length;
   const fixedTicket = tickets.find((tk) => tk.id === fixedId);
   const closeTicketRow = tickets.find((tk) => tk.id === closeId);
@@ -146,6 +150,33 @@ export function AdminPanel() {
           </div>
         </div>
       )}
+
+      {/* Room filter + resident preview */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <label className={`text-xs font-semibold text-neutral-500 ${lang === 'th' ? 'font-thai' : ''}`}>{t('filterByRoom')}</label>
+        <select
+          value={roomFilter}
+          onChange={(e) => setRoomFilter(e.target.value)}
+          className="rounded-xl border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-700 outline-none focus:border-primary-400"
+        >
+          <option value="all">{t('allRooms')}</option>
+          {roomOptions.map((r) => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
+        {roomFilter !== 'all' && (
+          <button
+            onClick={() => {
+              setViewAsRoom(roomFilter);
+              window.history.pushState(null, '', '/');
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+            className={`rounded-xl bg-neutral-800 px-3 py-1.5 text-xs font-bold text-white ${lang === 'th' ? 'font-thai' : ''}`}
+          >
+            {t('viewAsResident')}: {roomFilter}
+          </button>
+        )}
+      </div>
 
       {/* Repair-date filter: one queue per date */}
       <div className="mb-3">

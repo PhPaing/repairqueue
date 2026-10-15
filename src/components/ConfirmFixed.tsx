@@ -43,7 +43,7 @@ export function ConfirmFixedCard({
   };
 
   return (
-    <div className={full ? 'space-y-4' : 'space-y-2.5'}>
+    <div className={full ? 'space-y-4 pb-[120px]' : 'relative z-10 mb-20 space-y-2.5'}>
       <div className="rounded-2xl border border-accent-200 bg-accent-50 p-4">
         <h2 className={`flex items-start gap-2 font-extrabold leading-snug text-accent-800 ${full ? 'text-lg' : 'text-sm'} ${th}`}>
           <CheckCircle2 size={full ? 22 : 16} className="mt-0.5 shrink-0 text-accent-600" />

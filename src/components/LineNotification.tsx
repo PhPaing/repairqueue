@@ -4,7 +4,9 @@ import { useApp } from '@/context/AppContext';
 import { formatTimeAgo } from '@/lib/queue';
 
 export function LineNotificationToast() {
-  const { notifications, t, lang } = useApp();
+  const { notifications, myTickets, isAdmin, t, lang } = useApp();
+  // While a confirm card is on screen, park the banner at the top so the buttons stay tappable.
+  const confirmVisible = !isAdmin && myTickets.some((tk) => tk.status === 'waiting_confirm');
   const [first, ...rest] = notifications;
 
   useEffect(() => {
@@ -18,7 +20,7 @@ export function LineNotificationToast() {
   if (!first) return null;
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 px-2">
+    <div className={`fixed left-1/2 z-[5] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 px-2 ${confirmVisible ? 'top-[76px]' : 'bottom-4'}`}>
       <div className="animate-slide-up rounded-2xl border border-accent-200 bg-white p-3 shadow-lg">
         <div className="flex items-start gap-2.5">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-500 text-white">

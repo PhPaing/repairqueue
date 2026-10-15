@@ -29,16 +29,17 @@ const STATUS_KEY: Record<RepairStatus, string> = {
 };
 
 export function RepairList() {
-  const { tickets, t, lang } = useApp();
-  const completed = tickets.filter((tk) => tk.status === 'completed' || tk.status === 'closed');
-  const dates = getOpenDates(tickets);
+  const { tickets, myTickets, t, lang } = useApp();
+  // Only this room's tickets are listed; positions are still counted against everyone's queue.
+  const completed = myTickets.filter((tk) => tk.status === 'completed' || tk.status === 'closed');
+  const dates = getOpenDates(myTickets);
 
   if (dates.length === 0 && completed.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white py-12">
         <span className="text-4xl">🎉</span>
         <p className={`mt-3 text-lg font-bold text-neutral-700 ${lang === 'th' ? 'font-thai' : ''}`}>
-          {t('noRepairsTitle')}
+          {t('noRepairsCreate')}
         </p>
         <p className={`mt-1 text-sm text-neutral-400 ${lang === 'th' ? 'font-thai' : ''}`}>
           {t('noRepairsSub')}
@@ -51,8 +52,8 @@ export function RepairList() {
     <div className="space-y-4">
       {/* One queue per repair date - Q numbers never cross dates */}
       {dates.map((date) => {
-        const queue = getQueueForDate(tickets, date);
-        const waiting = tickets.filter((tk) => tk.repairDate === date && tk.status === 'waiting_confirm');
+        const queue = getQueueForDate(myTickets, date);
+        const waiting = myTickets.filter((tk) => tk.repairDate === date && tk.status === 'waiting_confirm');
         return (
           <section key={date}>
             <div className="mb-2 flex items-center gap-2">
@@ -61,7 +62,7 @@ export function RepairList() {
                 {formatBookingDate(date, lang)}
               </h3>
               <span className={`text-[11px] font-medium text-neutral-400 ${lang === 'th' ? 'font-thai' : ''}`}>
-                · {t('dayHeading', { n: queue.length })}
+                · {t('dayHeading', { n: getQueueForDate(tickets, date).length })}
               </span>
             </div>
             <div className="space-y-2.5">
@@ -130,6 +131,11 @@ function RepairCard({ ticket }: { ticket: RepairTicket }) {
             )}
           </div>
 
+          {ticket.isYou && isActive && (
+            <p className={`mt-0.5 text-[11px] font-semibold text-primary-600 ${lang === 'th' ? 'font-thai' : ''}`}>
+              {t('yourTicketLine', { id: ticket.ticketId, date: formatBookingDate(ticket.repairDate, lang), q: ticket.displayQ, pos: position })}
+            </p>
+          )}
           <p className={`mt-0.5 text-sm text-neutral-600 ${lang === 'th' ? 'font-thai' : ''}`}>
             {ISSUE_EMOJI[ticket.issueType]} {t(`issue${ticket.issueType.charAt(0).toUpperCase() + ticket.issueType.slice(1).replace(/_./g, (m) => m[1].toUpperCase())}`)}
           </p>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Camera, Check, Wrench, AlertTriangle, CalendarDays } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
-import { ISSUE_TYPES, MAX_BOOKING_DAYS, ROOMS } from '@/lib/constants';
+import { ISSUE_TYPES, MAX_BOOKING_DAYS } from '@/lib/constants';
 import { findActiveDuplicate, getQueueForDate, nextDisplayQ } from '@/lib/queue';
 import { addDaysISO, formatBookingDate, isValidISO, todayISO } from '@/lib/dates';
 import type { AddTicketResult } from '@/context/AppContext';
@@ -16,8 +16,7 @@ interface SubmitRepairModalProps {
 }
 
 export function SubmitRepairModal({ open, onClose }: SubmitRepairModalProps) {
-  const { addTicket, tickets, t, lang } = useApp();
-  const [room, setRoom] = useState('');
+  const { addTicket, tickets, myRoom: room, t, lang } = useApp();
   const [issueType, setIssueType] = useState<IssueType>('air_con');
   const [description, setDescription] = useState('');
   const [photoUploaded, setPhotoUploaded] = useState(false);
@@ -49,7 +48,6 @@ export function SubmitRepairModal({ open, onClose }: SubmitRepairModalProps) {
   };
 
   const handleClose = () => {
-    setRoom('');
     setIssueType('air_con');
     setDescription('');
     setPhotoUploaded(false);
@@ -121,19 +119,7 @@ export function SubmitRepairModal({ open, onClose }: SubmitRepairModalProps) {
             <label className={`mb-1.5 block text-xs font-semibold text-neutral-600 ${lang === 'th' ? 'font-thai' : ''}`}>
               {t('room')}
             </label>
-            <select
-              value={room}
-              onChange={(e) => setRoom(e.target.value)}
-              required
-              className={`w-full rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-800 outline-none transition-colors focus:border-primary-400 focus:ring-2 focus:ring-primary-100 ${lang === 'th' ? 'font-thai' : ''}`}
-            >
-              <option value="">{t('selectRoom')}</option>
-              {ROOMS.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
+            <div className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-sm font-bold text-neutral-800">{room}</div>
           </div>
 
           {/* Repair date - Q numbers are counted per date */}

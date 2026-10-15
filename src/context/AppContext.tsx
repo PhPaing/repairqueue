@@ -34,6 +34,7 @@ import {
 } from '@/lib/queue';
 import { addDaysISO, buildTicketId, isValidISO, nextTicketSeq, todayISO } from '@/lib/dates';
 import { t as translate } from '@/lib/i18n';
+import { clearRoom, clearRoomParam, isValidPin, loadPin, loadRoom, normalizeRoom, saveSession } from '@/lib/session';
 
 export interface AdminCorePatch {
   issueType?: IssueType;
@@ -113,7 +114,17 @@ function closeQGap(list: RepairTicket[], date: string, removedQ: number, exceptI
 }
 
 interface AppContextValue {
+  /** All tickets (admin view). `isYou` is derived from the logged-in room. */
   tickets: RepairTicket[];
+  /** Only the tickets of the room using this device (resident view). */
+  myTickets: RepairTicket[];
+  /** Room this device is logged in to ('' = show the Room Login). Admin "view as" overrides it. */
+  myRoom: string;
+  viewAsRoom: string;
+  setViewAsRoom: (room: string) => void;
+  loginRoom: (room: string, pin: string) => boolean;
+  /** Needs the saved PIN. Clears myRoom so the login screen shows again. */
+  logoutRoom: (pin: string) => boolean;
   notifications: LineNotification[];
   cancelLog: CancelRecord[];
   lang: Language;
@@ -162,11 +173,21 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [initial] = useState(loadData);
-  const [tickets, setTickets] = useState<RepairTicket[]>(initial.tickets);
+  const [rawTickets, setTickets] = useState<RepairTicket[]>(initial.tickets);
   const [notifications, setNotifications] = useState<LineNotification[]>(initial.notifications);
   const [lang, setLangState] = useState<Language>(loadLang());
   const [cancelLog, setCancelLog] = useState<CancelRecord[]>(initial.cancelLog);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [deviceRoom, setDeviceRoom] = useState(loadRoom);
+  const [viewAsRoom, setViewAsRoomState] = useState('');
+  const myRoom = viewAsRoom || deviceRoom;
+  const myRoomRef = useRef(myRoom);
+  myRoomRef.current = myRoom;
+  /** Room binding: a ticket is yours only if its room is this device's room. */
+  const owns = useCallback((tk: RepairTicket) => !!myRoomRef.current && tk.room === myRoomRef.current, []);
+  // `isYou` is derived from the room, never trusted from storage.
+  const tickets = useMemo(() => rawTickets.map((tk) => ({ ...tk, isYou: !!myRoom && tk.room === myRoom })), [rawTickets, myRoom]);
+  const myTickets = useMemo(() => tickets.filter((tk) => tk.isYou), [tickets]);
   const [toast, setToast] = useState<ToastMsg | null>(null);
 
   // Always-fresh snapshot so permission checks never use stale state.
@@ -201,7 +222,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           .flatMap((tk) => tk.lineLog.map((l) => ({ l, tk })))
           .filter(({ l }) => !seenLog.current.has(l.id));
         fresh.forEach(({ l }) => seenLog.current.add(l.id));
-        const mine = fresh.find(({ l, tk }) => (isAdminRef.current ? l.to === 'juristic' : l.to === 'resident' && tk.isYou));
+        const mine = fresh.find(({ l, tk }) => (isAdminRef.current ? l.to === 'juristic' : l.to === 'resident' && owns(tk)));
         if (mine) showToast(mine.l.text.split('\n')[0], translate(langRef.current, 'lineSimulatedToastSub'));
         setTickets(incoming.tickets);
       }
@@ -233,7 +254,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return false;
   }, []);
 
-  const logoutAdmin = useCallback(() => setIsAdmin(false), []);
+  const logoutAdmin = useCallback(() => {
+    setIsAdmin(false);
+    setViewAsRoomState('');
+  }, []);
+
+  const setViewAsRoom = useCallback((room: string) => setViewAsRoomState(normalizeRoom(room)), []);
+
+  /** First login on a device creates the PIN; later logins must match it. */
+  const loginRoom = useCallback((room: string, pin: string) => {
+    const r = normalizeRoom(room);
+    if (!r || !isValidPin(pin)) return false;
+    const saved = loadPin();
+    if (saved && saved !== pin) return false;
+    saveSession(r, pin);
+    setDeviceRoom(r);
+    clearRoomParam();
+    return true;
+  }, []);
+
+  const logoutRoom = useCallback((pin: string) => {
+    if (pin !== loadPin()) return false;
+    clearRoom();
+    setDeviceRoom('');
+    return true;
+  }, []);
 
   const commitTickets = useCallback((next: RepairTicket[]) => {
     stateRef.current = { ...stateRef.current, tickets: next };
@@ -398,7 +443,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (ticketId: string): boolean => {
       const current = stateRef.current.tickets;
       const ticket = current.find((tk) => tk.id === ticketId);
-      if (!ticket || !ticket.isYou || ticket.status !== 'waiting_confirm') return false;
+      if (!ticket || !owns(ticket) || ticket.status !== 'waiting_confirm') return false;
       const hist = entry('status', 'waiting_confirm', 'completed', 'resident');
       // Notification 2 (to juristic).
       const log = pushLine('residentConfirmed', confirmedMessage(ticket, hist.timestamp), hist.id);
@@ -429,7 +474,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const clean = reason.trim();
       const proof = photos.slice(0, MAX_PHOTOS);
       // "No, still broken" needs BOTH a note and a photo.
-      if (!ticket || !ticket.isYou || ticket.status !== 'waiting_confirm' || !clean || proof.length === 0) return false;
+      if (!ticket || !owns(ticket) || ticket.status !== 'waiting_confirm' || !clean || proof.length === 0) return false;
       const hist = entry('status', 'waiting_confirm', 'in_progress', 'resident', {
         reason: clean.slice(0, 500),
         photos: proof,
@@ -583,7 +628,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const current = stateRef.current.tickets;
       const ticket = current.find((tk) => tk.id === ticketId);
       // Permission gate: only the resident's own, still-unassigned ticket.
-      if (!ticket || !ticket.isYou || isAssigned(ticket) || !isOpenTicket(ticket)) return false;
+      if (!ticket || !owns(ticket) || isAssigned(ticket) || !isOpenTicket(ticket)) return false;
 
       // Whitelist: ONLY title / description / photos / note. Core fields are never copied from the patch.
       const updated: RepairTicket = {
@@ -610,7 +655,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (ticketId: string, text: string): boolean => {
       const current = stateRef.current.tickets;
       const ticket = current.find((tk) => tk.id === ticketId);
-      if (!ticket || !ticket.isYou || !text.trim() || !isOpenTicket(ticket)) return false;
+      if (!ticket || !owns(ticket) || !text.trim() || !isOpenTicket(ticket)) return false;
       // Append-only: existing notes and all core fields are left untouched.
       commitTickets(
         current.map((tk) =>
@@ -627,7 +672,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const current = stateRef.current.tickets;
       const ticket = current.find((tk) => tk.id === ticketId);
       const cleanReason = reason.trim();
-      if (!ticket || !ticket.isYou || !cleanReason) return false;
+      if (!ticket || !owns(ticket) || !cleanReason) return false;
       // Assigned tickets can only be cancelled by juristic in /admin.
       if (isAssigned(ticket) || !isOpenTicket(ticket)) return false;
 
@@ -666,6 +711,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppContextValue>(
     () => ({
       tickets,
+      myTickets,
+      myRoom,
+      viewAsRoom,
+      setViewAsRoom,
+      loginRoom,
+      logoutRoom,
       notifications,
       cancelLog,
       lang,
@@ -692,7 +743,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       adminUpdateTicket,
       resetData,
     }),
-    [tickets, notifications, cancelLog, lang, isAdmin, setLang, t, loginAdmin, logoutAdmin, addTicket, assignTechnician, startRepair, markFixed, confirmFixed, rejectFixed, toast, showToast, dismissToast, closeTicket, reorderTickets, moveTicket, updateTicketDetails, addNote, cancelQueue, adminUpdateTicket, resetData],
+    [tickets, myTickets, myRoom, viewAsRoom, setViewAsRoom, loginRoom, logoutRoom, notifications, cancelLog, lang, isAdmin, setLang, t, loginAdmin, logoutAdmin, addTicket, assignTechnician, startRepair, markFixed, confirmFixed, rejectFixed, toast, showToast, dismissToast, closeTicket, reorderTickets, moveTicket, updateTicketDetails, addNote, cancelQueue, adminUpdateTicket, resetData],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
