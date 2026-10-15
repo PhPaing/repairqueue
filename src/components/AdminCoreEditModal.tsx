@@ -3,6 +3,8 @@ import { Shield, X } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { ISSUE_TYPES } from '@/lib/constants';
 import { formatStamp } from '@/lib/history';
+import { formatBookingDate, todayISO } from '@/lib/dates';
+import { nextDisplayQ } from '@/lib/queue';
 import type { IssueType, Priority } from '@/types';
 
 const issueKey = (v: string) =>
@@ -17,6 +19,7 @@ const PRIORITIES: { value: Priority; key: string; cls: string }[] = [
 /** Juristic-only editor for core fields. Every change is written to the ticket's audit log. */
 export function AdminCoreEditModal({ ticketId, onClose }: { ticketId: string; onClose: () => void }) {
   const { tickets, adminUpdateTicket, t, lang } = useApp();
+  const today = todayISO();
   const ticket = tickets.find((tk) => tk.id === ticketId);
 
   const residentNotes = (ticket?.notes ?? []).filter((n) => n.author === 'resident');
@@ -24,16 +27,20 @@ export function AdminCoreEditModal({ ticketId, onClose }: { ticketId: string; on
 
   const [issueType, setIssueType] = useState<IssueType>(ticket?.issueType ?? 'other');
   const [priority, setPriority] = useState<Priority>(ticket?.priority ?? 'normal');
-  const [date, setDate] = useState(ticket?.scheduledDate ?? '');
+  const [date, setDate] = useState(ticket?.repairDate ?? today);
   const [reason, setReason] = useState('');
   const [noteId, setNoteId] = useState(latest?.id ?? '');
   const [touched, setTouched] = useState(false);
 
   if (!ticket) return null;
 
-  const dateChanged = (date || null) !== ticket.scheduledDate;
+  const dateChanged = !!date && date !== ticket.repairDate;
+  const urgentSet = priority === 'urgent' && ticket.priority !== 'urgent';
   const anyChange = dateChanged || issueType !== ticket.issueType || priority !== ticket.priority;
-  const reasonMissing = dateChanged && reason.trim().length === 0;
+  // Reason is mandatory for a date change and for marking a ticket urgent.
+  const reasonRequired = dateChanged || urgentSet;
+  const reasonMissing = reasonRequired && reason.trim().length === 0;
+  const movedQ = dateChanged ? nextDisplayQ(tickets.filter((tk) => tk.id !== ticket.id), date) : 0;
   const th = lang === 'th' ? 'font-thai' : '';
   const field = `w-full rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-800 outline-none transition-colors focus:border-primary-400 focus:ring-2 focus:ring-primary-100 ${th}`;
   const label = `mb-1.5 block text-xs font-semibold text-neutral-600 ${th}`;
@@ -45,7 +52,7 @@ export function AdminCoreEditModal({ ticketId, onClose }: { ticketId: string; on
       adminUpdateTicket(ticketId, {
         issueType,
         priority,
-        scheduledDate: date || null,
+        repairDate: date || ticket.repairDate,
         reason,
         requestedNoteId: noteId || null,
       })
@@ -114,25 +121,25 @@ export function AdminCoreEditModal({ ticketId, onClose }: { ticketId: string; on
           </div>
 
           <div>
-            <label className={label}>{t('fieldScheduledDate')}</label>
-            <div className="flex gap-2">
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={field} />
-              {date && (
-                <button
-                  type="button"
-                  onClick={() => setDate('')}
-                  className={`shrink-0 rounded-xl border border-neutral-200 px-3 text-xs font-semibold text-neutral-500 ${th}`}
-                >
-                  {t('clearDate')}
-                </button>
-              )}
-            </div>
+            <label className={label}>{t('fieldRepairDate')}</label>
+            <input
+              type="date"
+              min={today}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className={field}
+            />
+            {dateChanged && (
+              <p className={`mt-1 text-[11px] font-medium text-primary-600 ${th}`}>
+                {t('movesToDate', { date: formatBookingDate(date, lang), n: movedQ })}
+              </p>
+            )}
           </div>
 
           <div>
             <label className={label}>
               {t('changeReasonLabel')}
-              {dateChanged && <span className="text-red-500"> *</span>}
+              {reasonRequired && <span className="text-red-500"> *</span>}
             </label>
             <textarea
               value={reason}

@@ -1,14 +1,16 @@
 import { CalendarDays, Clock } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { TECHNICIAN_MAP, ISSUE_EMOJI } from '@/lib/constants';
-import { formatTimeAgo, getActiveTickets, getQueuePosition } from '@/lib/queue';
+import { formatTimeAgo, getOpenDates, getQueueForDate, getQueuePosition, isOpenTicket } from '@/lib/queue';
+import { formatBookingDate } from '@/lib/dates';
 import type { RepairStatus, RepairTicket } from '@/types';
 import { getTechnicianName } from '@/lib/permissions';
-import { formatDay, priorityLabel } from '@/lib/history';
-import { NoteHistory, TicketActions } from '@/components/TicketActions';
+import { priorityLabel } from '@/lib/history';
+import { NoteHistory, TicketActions, UrgentBanner } from '@/components/TicketActions';
 
 const STATUS_STYLES: Record<RepairStatus, { bg: string; text: string; dot: string }> = {
   in_progress: { bg: 'bg-info-100', text: 'text-info-700', dot: 'bg-info-500' },
+  waiting_confirm: { bg: 'bg-accent-100', text: 'text-accent-700', dot: 'bg-accent-500' },
   assigned: { bg: 'bg-info-50', text: 'text-info-700', dot: 'bg-info-400' },
   queued: { bg: 'bg-primary-100', text: 'text-primary-700', dot: 'bg-primary-500' },
   waiting: { bg: 'bg-neutral-100', text: 'text-neutral-600', dot: 'bg-neutral-400' },
@@ -18,6 +20,7 @@ const STATUS_STYLES: Record<RepairStatus, { bg: string; text: string; dot: strin
 
 const STATUS_KEY: Record<RepairStatus, string> = {
   in_progress: 'statusInProgress',
+  waiting_confirm: 'statusWaitingConfirm',
   assigned: 'statusAssigned',
   queued: 'statusQueued',
   waiting: 'statusWaiting',
@@ -27,11 +30,10 @@ const STATUS_KEY: Record<RepairStatus, string> = {
 
 export function RepairList() {
   const { tickets, t, lang } = useApp();
-  const active = getActiveTickets(tickets);
   const completed = tickets.filter((tk) => tk.status === 'completed' || tk.status === 'closed');
-  const ordered = [...active, ...completed];
+  const dates = getOpenDates(tickets);
 
-  if (tickets.length === 0 || active.length === 0 && completed.length === 0) {
+  if (dates.length === 0 && completed.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white py-12">
         <span className="text-4xl">🎉</span>
@@ -46,10 +48,43 @@ export function RepairList() {
   }
 
   return (
-    <div className="space-y-2.5">
-      {ordered.map((ticket) => (
-        <RepairCard key={ticket.id} ticket={ticket} />
-      ))}
+    <div className="space-y-4">
+      {/* One queue per repair date - Q numbers never cross dates */}
+      {dates.map((date) => {
+        const queue = getQueueForDate(tickets, date);
+        const waiting = tickets.filter((tk) => tk.repairDate === date && tk.status === 'waiting_confirm');
+        return (
+          <section key={date}>
+            <div className="mb-2 flex items-center gap-2">
+              <CalendarDays size={14} className="text-primary-500" />
+              <h3 className={`text-xs font-bold text-neutral-600 ${lang === 'th' ? 'font-thai' : ''}`}>
+                {formatBookingDate(date, lang)}
+              </h3>
+              <span className={`text-[11px] font-medium text-neutral-400 ${lang === 'th' ? 'font-thai' : ''}`}>
+                · {t('dayHeading', { n: queue.length })}
+              </span>
+            </div>
+            <div className="space-y-2.5">
+              {[...queue, ...waiting].map((ticket) => (
+                <RepairCard key={ticket.id} ticket={ticket} />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+
+      {completed.length > 0 && (
+        <section>
+          <h3 className={`mb-2 text-xs font-bold text-neutral-500 ${lang === 'th' ? 'font-thai' : ''}`}>
+            {t('completedHeading')}
+          </h3>
+          <div className="space-y-2.5">
+            {completed.map((ticket) => (
+              <RepairCard key={ticket.id} ticket={ticket} />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -57,11 +92,7 @@ export function RepairList() {
 function RepairCard({ ticket }: { ticket: RepairTicket }) {
   const { tickets, t, lang } = useApp();
   const position = getQueuePosition(ticket, tickets);
-  const isActive =
-    ticket.status === 'in_progress' ||
-    ticket.status === 'assigned' ||
-    ticket.status === 'queued' ||
-    ticket.status === 'waiting';
+  const isActive = isOpenTicket(ticket);
   const tech = ticket.technicianId ? TECHNICIAN_MAP[ticket.technicianId] : null;
   const technicianName = getTechnicianName(ticket);
   const styles = STATUS_STYLES[ticket.status];
@@ -76,9 +107,9 @@ function RepairCard({ ticket }: { ticket: RepairTicket }) {
         {/* Queue number badge */}
         {isActive ? (
           <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl bg-primary-50">
-            <span className="text-[9px] font-semibold uppercase text-primary-500">Q</span>
-            <span className="text-xl font-extrabold leading-none text-primary-600">
-              #{position}
+            <span className="text-xl font-extrabold leading-none text-primary-600">Q{ticket.displayQ}</span>
+            <span className="mt-0.5 text-[9px] font-semibold text-primary-500">
+              {position > 0 ? `#${position}` : '✓?'}
             </span>
           </div>
         ) : (
@@ -91,6 +122,7 @@ function RepairCard({ ticket }: { ticket: RepairTicket }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-neutral-800">{ticket.room}</span>
+            <span className="text-[10px] font-medium text-neutral-400">{ticket.ticketId}</span>
             {ticket.isYou && (
               <span className="rounded-md bg-primary-400 px-1.5 py-0.5 text-[10px] font-bold text-white">
                 {t('yourTicket')}
@@ -148,12 +180,10 @@ function RepairCard({ ticket }: { ticket: RepairTicket }) {
                 {priorityLabel(ticket.priority, lang)}
               </span>
             )}
-            {ticket.scheduledDate && (
-              <span className={`flex items-center gap-1 text-[11px] font-medium text-neutral-500 ${lang === 'th' ? 'font-thai' : ''}`}>
-                <CalendarDays size={11} />
-                {t('fieldScheduledDate')}: {formatDay(ticket.scheduledDate, lang)}
-              </span>
-            )}
+            <span className={`flex items-center gap-1 text-[11px] font-medium text-neutral-500 ${lang === 'th' ? 'font-thai' : ''}`}>
+              <CalendarDays size={11} />
+              {formatBookingDate(ticket.repairDate, lang)}
+            </span>
             {tech && technicianName && (
               <span className="flex items-center gap-1 text-[11px] text-neutral-500">
                 <span>{tech.avatar}</span>
@@ -162,6 +192,7 @@ function RepairCard({ ticket }: { ticket: RepairTicket }) {
             )}
           </div>
 
+          <UrgentBanner ticket={ticket} />
           {ticket.isYou && <NoteHistory ticket={ticket} />}
           <TicketActions ticket={ticket} />
         </div>

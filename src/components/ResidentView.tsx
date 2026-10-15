@@ -1,17 +1,21 @@
 import { useState } from 'react';
 import { Plus, List } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
-import { getActiveTickets } from '@/lib/queue';
+import { isOpenTicket } from '@/lib/queue';
 import { QueueCard } from '@/components/QueueCard';
 import { RepairList } from '@/components/RepairList';
 import { SubmitRepairModal } from '@/components/SubmitRepairModal';
+import { ConfirmOverlay } from '@/components/ConfirmFixed';
 
 export function ResidentView() {
   const { tickets, t, lang } = useApp();
   const [showModal, setShowModal] = useState(false);
 
-  const active = getActiveTickets(tickets);
-  const yourTicket = active.find((tk) => tk.isYou) ?? null;
+  // Your nearest open ticket (earliest repair date, then position).
+  const yourTicket =
+    tickets
+      .filter((tk) => tk.isYou && isOpenTicket(tk))
+      .sort((a, b) => a.repairDate.localeCompare(b.repairDate) || a.queueOrder - b.queueOrder)[0] ?? null;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-5">
@@ -44,6 +48,9 @@ export function ResidentView() {
 
       {/* Submit modal */}
       <SubmitRepairModal open={showModal} onClose={() => setShowModal(false)} />
+
+      {/* Full-screen "Technician marked as fixed - please confirm" card */}
+      <ConfirmOverlay />
     </div>
   );
 }

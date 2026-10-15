@@ -6,13 +6,14 @@ import { compressImage } from '@/lib/image';
 import { isAssigned } from '@/lib/permissions';
 import { getQueuePosition } from '@/lib/queue';
 import { t as translate } from '@/lib/i18n';
-import { formatDay, priorityLabel } from '@/lib/history';
+import { priorityLabel } from '@/lib/history';
+import { formatBookingDate } from '@/lib/dates';
 import type { RepairTicket } from '@/types';
 
 const issueKey = (v: string) =>
   `issue${v.charAt(0).toUpperCase() + v.slice(1).replace(/_./g, (m) => m[1].toUpperCase())}`;
 
-function Sheet({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+export function Sheet({ onClose, children }: { onClose: () => void; children: ReactNode }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
@@ -28,7 +29,7 @@ function Sheet({ onClose, children }: { onClose: () => void; children: ReactNode
   );
 }
 
-function SheetHeader({ title, onClose }: { title: string; onClose: () => void }) {
+export function SheetHeader({ title, onClose }: { title: string; onClose: () => void }) {
   const { lang } = useApp();
   return (
     <div className="sticky top-0 flex items-center justify-between border-b border-neutral-100 bg-white px-5 py-4">
@@ -205,9 +206,10 @@ export function EditTicketModal({ ticketId, onClose }: { ticketId: string; onClo
                 timeStyle: 'short',
               })}
             />
-            <LockedField label={t('fieldScheduledDate')} value={formatDay(live.scheduledDate, lang)} />
+            <LockedField label={t('ticketIdLabel')} value={live.ticketId} />
+            <LockedField label={t('fieldRepairDate')} value={formatBookingDate(live.repairDate, lang)} />
             <LockedField label={t('fieldPriority')} value={priorityLabel(live.priority, lang)} />
-            <LockedField label={t('fieldQueueOrder')} value={`Q${q}`} />
+            <LockedField label={t('fieldQueueOrder')} value={`Q${live.displayQ} (#${q})`} />
           </div>
           <p className={`mt-2 text-[11px] text-neutral-400 ${lang === 'th' ? 'font-thai' : ''}`}>{t('dateRequestHint')}</p>
         </div>
@@ -269,7 +271,7 @@ export function CancelQueueModal({ ticketId, onClose }: { ticketId: string; onCl
   const [touched, setTouched] = useState(false);
 
   if (!live) return null;
-  const q = getQueuePosition(live, tickets);
+  const q = live.displayQ;
   const missing = reason.trim().length === 0;
 
   if (isAssigned(live)) {
@@ -303,6 +305,9 @@ export function CancelQueueModal({ ticketId, onClose }: { ticketId: string; onCl
         </p>
         <p className={`mt-0.5 text-[11px] text-neutral-400 ${lang === 'th' ? '' : 'font-thai'}`}>
           {translate(lang === 'th' ? 'en' : 'th', 'cancelConfirmTitle', { n: q })}
+        </p>
+        <p className="mt-1 text-[11px] font-medium text-neutral-500">
+          {live.ticketId} · {formatBookingDate(live.repairDate, lang)}
         </p>
         <textarea
           autoFocus
@@ -387,12 +392,12 @@ export function AddNoteModal({ ticket, onClose }: { ticket: RepairTicket; onClos
 /* Contact Juristic (assigned) - opens LINE / phone, never cancels     */
 /* ------------------------------------------------------------------ */
 export function ContactJuristicSheet({ ticket, onClose }: { ticket: RepairTicket; onClose: () => void }) {
-  const { tickets, t, lang } = useApp();
+  const { t, lang } = useApp();
   const [copied, setCopied] = useState(false);
-  const q = getQueuePosition(ticket, tickets);
+  const q = ticket.displayQ;
 
   // Exact request text first, Thai translation + room underneath for the juristic office.
-  const message = `${translate('en', 'juristicMsg', { n: q })}\n${translate('th', 'juristicMsg', { n: q })}\nRoom / ห้อง ${ticket.room}`;
+  const message = `${translate('en', 'juristicMsg', { n: q })}\n${translate('th', 'juristicMsg', { n: q })}\nRoom / ห้อง ${ticket.room} · ${ticket.ticketId} (${formatBookingDate(ticket.repairDate, 'en')})`;
 
   const lineHref = JURISTIC_LINE_OA_ID
     ? `https://line.me/R/oaMessage/${encodeURIComponent(JURISTIC_LINE_OA_ID)}/?${encodeURIComponent(message)}`
@@ -445,6 +450,145 @@ export function ContactJuristicSheet({ ticket, onClose }: { ticket: RepairTicket
           {copied ? <Check size={14} /> : <Copy size={14} />}
           {copied ? t('copied') : t('copyMessage')}
         </button>
+      </div>
+    </Sheet>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Photo picker (shared by "still broken" and admin "mark as fixed")   */
+/* ------------------------------------------------------------------ */
+export function PhotoPicker({
+  photos,
+  setPhotos,
+  invalid = false,
+}: {
+  photos: string[];
+  setPhotos: (p: string[]) => void;
+  invalid?: boolean;
+}) {
+  const { t, lang } = useApp();
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files) return;
+    setBusy(true);
+    const picked = Array.from(files)
+      .filter((f) => f.type.startsWith('image/'))
+      .slice(0, MAX_PHOTOS - photos.length);
+    const added: string[] = [];
+    for (const f of picked) {
+      try {
+        added.push(await compressImage(f));
+      } catch {
+        // skip unreadable image
+      }
+    }
+    setPhotos([...photos, ...added].slice(0, MAX_PHOTOS));
+    setBusy(false);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  return (
+    <div>
+      <div className="grid grid-cols-4 gap-2">
+        {photos.map((src, i) => (
+          <div key={i} className="relative aspect-square overflow-hidden rounded-xl border border-neutral-200">
+            <img src={src} alt="" className="h-full w-full object-cover" />
+            <button
+              type="button"
+              onClick={() => setPhotos(photos.filter((_, idx) => idx !== i))}
+              className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white"
+              aria-label={t('removePhoto')}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        ))}
+        {photos.length < MAX_PHOTOS && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+            className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed bg-neutral-50 text-neutral-400 transition-colors hover:border-neutral-300 disabled:opacity-50 ${
+              invalid ? 'border-red-400' : 'border-neutral-200'
+            }`}
+          >
+            <Camera size={20} />
+            <span className={`text-[10px] font-medium ${lang === 'th' ? 'font-thai' : ''}`}>{t('addPhoto')}</span>
+          </button>
+        )}
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => handleFiles(e.target.files)}
+      />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Resident: "No, still broken" - reason required, photos optional     */
+/* ------------------------------------------------------------------ */
+export function RejectFixedModal({ ticket, onClose }: { ticket: RepairTicket; onClose: () => void }) {
+  const { rejectFixed, t, lang } = useApp();
+  const [reason, setReason] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [touched, setTouched] = useState(false);
+  const missing = reason.trim().length === 0;
+  // "No, still broken" needs a note AND a photo.
+  const missingPhoto = photos.length === 0;
+  const blocked = missing || missingPhoto;
+  const th = lang === 'th' ? 'font-thai' : '';
+
+  const send = () => {
+    setTouched(true);
+    if (blocked) return;
+    if (rejectFixed(ticket.id, reason, photos)) onClose();
+  };
+
+  return (
+    <Sheet onClose={onClose}>
+      <SheetHeader title={`${t('rejectTitle')} · ${ticket.ticketId}`} onClose={onClose} />
+      <div className="space-y-4 px-5 py-5">
+        <p className={`text-sm text-neutral-600 ${th}`}>{t('rejectHint')}</p>
+        <div>
+          <label className={labelCls(lang)}>{t('fieldNote')} *</label>
+          <textarea
+            autoFocus
+            value={reason}
+            rows={3}
+            maxLength={500}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={t('rejectReasonPlaceholder')}
+            className={`${inputCls(lang)} resize-none ${touched && missing ? '!border-red-400 !ring-2 !ring-red-100' : ''}`}
+          />
+          {touched && missing && <p className={`mt-1 text-xs font-medium text-red-500 ${th}`}>{t('rejectReasonRequired')}</p>}
+        </div>
+        <div>
+          <label className={labelCls(lang)}>{t('fieldPhotos')} *</label>
+          <PhotoPicker photos={photos} setPhotos={setPhotos} invalid={touched && missingPhoto} />
+          {touched && missingPhoto && <p className={`mt-1 text-xs font-medium text-red-500 ${th}`}>{t('rejectPhotoRequired')}</p>}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            className={`flex-1 rounded-xl border border-neutral-200 bg-white py-3 text-sm font-semibold text-neutral-600 ${th}`}
+          >
+            {t('cancel')}
+          </button>
+          <button
+            onClick={send}
+            className={`flex-1 rounded-xl bg-red-500 py-3 text-sm font-semibold text-white transition-all hover:bg-red-600 active:scale-95 ${blocked ? 'opacity-60' : ''} ${th}`}
+          >
+            {t('sendToJuristic')}
+          </button>
+        </div>
       </div>
     </Sheet>
   );

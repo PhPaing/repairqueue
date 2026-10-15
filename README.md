@@ -31,6 +31,27 @@ A ticket is **assigned** when `status === 'assigned' || technicianName != null`.
 - Residents can only *request* a date change by adding a note.
 - Rules are enforced in `AppContext` (`updateTicketDetails`, `addNote`, `cancelQueue`), not only in the UI.
 
+## Date-based queue, duplicate block, dual-confirm complete
+- **Q is per repair date.** The resident picks a repair date when booking; `Q1, Q2...` count only tickets for that date.
+  `ticketId` (`DDMM-ROOM-SEQ`, e.g. `1810-1201-1`) is permanent. `displayQ` is the booking order for that date, and
+  `queueOrder` is the dynamic position inside that date (admin reorder / urgent).
+- **Admin `/#admin`** shows one date's queue at a time (date chips + date picker). Reorder never crosses dates;
+  moving a ticket to another date needs a reason and is audit-logged (ticketId unchanged, Q recalculated on both dates).
+- **Duplicate block:** one active ticket per room per issue type (Pending / Assigned / In Progress / Waiting Confirm).
+- **Dual confirm (app is the source of truth, LINE only notifies):**
+  1. Juristic in `/admin` taps **Mark as Fixed** -> needs a fixed photo + the checkbox **Simulate LINE push to resident**
+     -> status *Waiting Resident Confirm*, LINE notification 1 is logged and previewed, toast "LINE simulated".
+  2. The resident sees a banner "LINE notification sent at ..." and a full-screen card: fixed photo, technician, time and two
+     big buttons. **Yes, Fixed** -> Completed + thank-you + LINE notification 2 to juristic (the room may book that issue type
+     again). **No, Still Broken** needs a note **and** a photo -> back to In Progress + LINE notification 3 to juristic.
+  3. There is no direct Complete button. Every step is written to the ticket audit log (status, technician, edits, LINE sends).
+- **LINE (demo mode):** `LINE_CHANNEL_ACCESS_TOKEN` in `src/lib/constants.ts` is empty, so every push is simulated: it is saved as
+  `lineLog {sent: true, sentAt, type, simulated: true}` on the ticket and shown with an amber **Simulated** badge.
+  Message texts live in `src/lib/line.ts`. A real token is a secret and must be used from a server function (e.g. a Netlify
+  function), not from this browser bundle - `pushLine()` in `src/lib/line.ts` is the place to call it.
+- `/admin` and `/#admin` both open the admin panel (the LINE messages link to `/admin`).
+- **Urgent** priority requires a reason and shows a red banner with that reason.
+
 ## Tech stack
 React 18 · TypeScript · Vite · Tailwind CSS · Lucide icons
 

@@ -1,20 +1,19 @@
 import { Clock, Wrench, ChevronRight } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { TECHNICIAN_MAP } from '@/lib/constants';
-import {
-  getActiveTickets,
-  getEstimatedTime,
-  getPeopleAhead,
-  getQueuePosition,
-} from '@/lib/queue';
+import { getPeopleAhead, getQueueForDate, getQueuePosition } from '@/lib/queue';
+import { formatBookingDate } from '@/lib/dates';
+import { UrgentBanner } from '@/components/TicketActions';
 import type { RepairTicket } from '@/types';
 
 export function QueueCard({ yourTicket }: { yourTicket: RepairTicket }) {
   const { tickets, t, lang } = useApp();
-  const active = getActiveTickets(tickets);
+  // The queue is per repair date - only tickets booked for the same day count.
+  const active = getQueueForDate(tickets, yourTicket.repairDate);
   const position = getQueuePosition(yourTicket, tickets);
   const peopleAhead = getPeopleAhead(position);
-  const estimated = getEstimatedTime(position, lang);
+  const bookingDate = formatBookingDate(yourTicket.repairDate, lang);
+  const th = lang === 'th' ? 'font-thai' : '';
   const inProgress = active.find((tk) => tk.status === 'in_progress');
   const technician = inProgress?.technicianId
     ? TECHNICIAN_MAP[inProgress.technicianId]
@@ -30,24 +29,35 @@ export function QueueCard({ yourTicket }: { yourTicket: RepairTicket }) {
         {t('queuePosition')}
       </div>
 
-      <div className="mt-3 flex items-baseline gap-2">
-        <span className="text-sm font-medium text-neutral-500">{t('youAreQ')}</span>
-        <span className="text-5xl font-extrabold leading-none text-primary-500">
-          #{position}
-        </span>
-        <span className={`text-sm font-medium text-neutral-400 ${lang === 'th' ? 'font-thai' : ''}`}>
-          {t('inQueue')}
-        </span>
-      </div>
+      {/* Ticket id + per-date booking */}
+      <p className={`mt-2 text-xs font-semibold leading-snug text-neutral-600 ${th}`}>
+        {t('yourTicketLabel')}: <span className="font-extrabold text-neutral-800">{yourTicket.ticketId}</span>
+        {' | '}
+        {t('bookingLabel')}: {bookingDate} - Q{yourTicket.displayQ}
+        {position > 0 && ` (${t('positionLabel')} #${position})`}
+      </p>
+
+      {position > 0 ? (
+        <div className="mt-3 flex items-baseline gap-2">
+          <span className="text-sm font-medium text-neutral-500">{t('youAreQ')}</span>
+          <span className="text-5xl font-extrabold leading-none text-primary-500">#{position}</span>
+          <span className={`text-sm font-medium text-neutral-400 ${th}`}>{t('inQueue')}</span>
+        </div>
+      ) : (
+        <p className={`mt-3 text-lg font-extrabold text-accent-600 ${th}`}>{t('statusWaitingConfirm')}</p>
+      )}
+
+      <UrgentBanner ticket={yourTicket} />
 
       {/* Estimated + people ahead */}
       <div className="mt-4 flex flex-wrap gap-3">
         <div className="flex items-center gap-1.5 rounded-lg bg-primary-50 px-3 py-1.5">
           <Clock size={14} className="text-primary-600" />
           <span className={`text-sm font-semibold text-primary-700 ${lang === 'th' ? 'font-thai' : ''}`}>
-            {t('estimated')}: {estimated}
+            {t('bookingLabel')}: {bookingDate}
           </span>
         </div>
+        {position > 0 && (
         <div className="flex items-center gap-1.5 rounded-lg bg-neutral-100 px-3 py-1.5">
           <span className={`text-sm font-semibold text-neutral-600 ${lang === 'th' ? 'font-thai' : ''}`}>
             {peopleAhead === 0
@@ -57,6 +67,7 @@ export function QueueCard({ yourTicket }: { yourTicket: RepairTicket }) {
                 : t('peopleAhead', { n: peopleAhead })}
           </span>
         </div>
+        )}
       </div>
 
       {/* Technician status */}

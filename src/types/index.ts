@@ -1,5 +1,6 @@
 export type RepairStatus =
   | 'in_progress'
+  | 'waiting_confirm'
   | 'assigned'
   | 'queued'
   | 'waiting'
@@ -24,18 +25,42 @@ export interface Technician {
 
 export type Priority = 'normal' | 'high' | 'urgent';
 
-/** Admin-only audit entry for a core-field change. */
+/** Audit entry for a core-field change or a status action (admin or resident). */
 export interface HistoryEntry {
   id: string;
-  field: 'issueType' | 'priority' | 'scheduledDate' | 'queueOrder';
-  /** Raw values: issue/priority keys, 'YYYY-MM-DD' for dates, 'Q3' for queue. */
+  field: 'issueType' | 'priority' | 'repairDate' | 'queueOrder' | 'status' | 'technician' | 'details';
+  /** Raw values: issue/priority/status keys, 'YYYY-MM-DD' for dates, '#3' for position, technician name,
+   *  comma-separated edited fields ('title,photos') for 'details'. An empty `from` means "did not exist yet". */
   from: string;
   to: string;
   reason: string;
-  by: 'admin';
+  by: 'admin' | 'resident';
+  /** Photos attached to this action (proof of fix / "still broken" photos). */
+  photos?: string[];
   timestamp: number;
   /** Snapshot of the resident note this change was requested through, if any. */
   requestedViaNote: string | null;
+}
+
+export type LineMessageType = 'markFixed' | 'residentConfirmed' | 'residentRejected';
+
+/**
+ * One LINE message that was (or, in demo mode, would be) pushed. Stored on the ticket as an audit trail.
+ * The app stays the source of truth - LINE only notifies.
+ */
+export interface LineLogEntry {
+  id: string;
+  type: LineMessageType;
+  /** Who the message goes to. */
+  to: 'resident' | 'juristic';
+  sent: true;
+  sentAt: number;
+  /** true until a real CHANNEL_ACCESS_TOKEN is configured. */
+  simulated: boolean;
+  /** Exact message text. */
+  text: string;
+  /** History entry whose photos belong to this message (kept there to avoid storing photos twice). */
+  historyId?: string;
 }
 
 export interface TicketNote {
@@ -47,6 +72,8 @@ export interface TicketNote {
 
 export interface CancelRecord {
   id: string;
+  ticketId?: string;
+  repairDate?: string;
   room: string;
   queueNumber: number;
   reason: string;
@@ -56,11 +83,19 @@ export interface CancelRecord {
 }
 
 export interface RepairTicket {
+  /** Internal key. */
   id: string;
+  /** Permanent public id: DDMM-ROOM-SEQ (e.g. 1810-1201-1). Never changes. */
+  ticketId: string;
+  /** Booked repair date ('YYYY-MM-DD'). Q numbers are counted per date. */
+  repairDate: string;
+  /** Q label within repairDate (booking order, e.g. Q1, Q2). */
+  displayQ: number;
   room: string;
   issueType: IssueType;
   description: string;
   status: RepairStatus;
+  /** Dynamic position within repairDate (admin can reorder, e.g. urgent). 0 = not in queue. */
   queueOrder: number;
   reportedAt: number;
   technicianId: string | null;
@@ -74,10 +109,10 @@ export interface RepairTicket {
   notes: TicketNote[];
   /** Core field set by juristic only. */
   priority: Priority;
-  /** Scheduled service date ('YYYY-MM-DD'), set by juristic only. */
-  scheduledDate: string | null;
-  /** Audit log of admin changes to core fields. */
+  /** Audit log of every change (admin and resident). */
   history: HistoryEntry[];
+  /** LINE notifications sent for this ticket (simulated in demo mode). */
+  lineLog: LineLogEntry[];
 }
 
 export interface LineNotification {

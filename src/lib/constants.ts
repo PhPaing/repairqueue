@@ -1,4 +1,5 @@
 import type { IssueType, RepairTicket, Technician } from '@/types';
+import { addDaysISO, buildTicketId, todayISO } from './dates';
 
 export const TECHNICIANS: Technician[] = [
   { id: 'tech_chai', name: "P' Chai", avatar: '👷‍♂️' },
@@ -41,16 +42,43 @@ export const ADMIN_PASSWORD = '1234';
 export const JURISTIC_LINE_OA_ID = '';
 export const JURISTIC_PHONE = '';
 
+/**
+ * LINE Messaging API. Leave the token empty to run in DEMO mode: every LINE push is simulated
+ * (logged + previewed with a "Simulated" badge, nothing leaves the browser).
+ * A real CHANNEL_ACCESS_TOKEN is a secret - it must live in a server function (e.g. a Netlify function),
+ * never in this client bundle, so do not paste it here.
+ */
+export const LINE_CHANNEL_ACCESS_TOKEN = '';
+/** Shown inside LINE messages. */
+export const APP_HOST = 'repairqueue.netlify.app';
+
 export const MAX_PHOTOS = 4;
+/** How far ahead a resident may book a repair date. */
+export const MAX_BOOKING_DAYS = 90;
 
 export const STORAGE_KEY = 'condo-repair-queue-v1';
 export const LANG_KEY = 'condo-repair-queue-lang';
 
 const now = Date.now();
+const today = todayISO();
+const inTwoDays = addDaysISO(today, 2);
+
+const base = {
+  title: '',
+  photos: [] as string[],
+  notes: [],
+  priority: 'normal' as const,
+  history: [],
+  lineLog: [],
+};
 
 export const INITIAL_TICKETS: RepairTicket[] = [
   {
+    ...base,
     id: 'ticket-1',
+    ticketId: buildTicketId(today, 'A-101', 1),
+    repairDate: today,
+    displayQ: 1,
     room: 'A-101',
     issueType: 'air_con',
     description: 'Air conditioner leaking water onto the floor, dripping constantly.',
@@ -60,15 +88,13 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     technicianId: 'tech_chai',
     isYou: false,
     photoEmoji: '❄️',
-    title: '',
-    photos: [],
-    notes: [],
-    priority: 'normal',
-    scheduledDate: null,
-    history: [],
   },
   {
+    ...base,
     id: 'ticket-2',
+    ticketId: buildTicketId(today, 'B-205', 1),
+    repairDate: today,
+    displayQ: 2,
     room: 'B-205',
     issueType: 'door_lock',
     description: 'Door lock is stuck, cannot lock from outside.',
@@ -78,15 +104,13 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     technicianId: null,
     isYou: true,
     photoEmoji: '🔒',
-    title: '',
-    photos: [],
-    notes: [],
-    priority: 'normal',
-    scheduledDate: null,
-    history: [],
   },
   {
+    ...base,
     id: 'ticket-3',
+    ticketId: buildTicketId(today, 'C-302', 1),
+    repairDate: today,
+    displayQ: 3,
     room: 'C-302',
     issueType: 'water_pipe',
     description: 'Water pipe under sink is leaking slowly.',
@@ -96,29 +120,21 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     technicianId: null,
     isYou: false,
     photoEmoji: '🚿',
-    title: '',
-    photos: [],
-    notes: [],
-    priority: 'normal',
-    scheduledDate: null,
-    history: [],
   },
   {
+    ...base,
     id: 'ticket-4',
+    ticketId: buildTicketId(inTwoDays, 'D-110', 1),
+    repairDate: inTwoDays,
+    displayQ: 1,
     room: 'D-110',
     issueType: 'electric',
     description: 'Ceiling light flickering in the living room.',
     status: 'queued',
-    queueOrder: 4,
+    queueOrder: 1,
     reportedAt: now - 1000 * 60 * 45,
     technicianId: null,
     isYou: false,
     photoEmoji: '💡',
-    title: '',
-    photos: [],
-    notes: [],
-    priority: 'normal',
-    scheduledDate: null,
-    history: [],
   },
 ];

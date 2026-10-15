@@ -1,12 +1,75 @@
 import type { Language, LineNotification, RepairTicket, RepairStats } from '@/types';
 import { t } from './i18n';
 
-const ACTIVE_STATUSES = new Set(['in_progress', 'assigned', 'queued', 'waiting']);
+/** Statuses that occupy a slot in a date's queue. */
+const QUEUE_STATUSES = new Set(['in_progress', 'assigned', 'queued', 'waiting']);
+/** Statuses that still count as an open (not finished) ticket. */
+const OPEN_STATUSES = new Set(['in_progress', 'assigned', 'queued', 'waiting', 'waiting_confirm']);
 
+export const inQueue = (tk: RepairTicket) => QUEUE_STATUSES.has(tk.status);
+export const isOpenTicket = (tk: RepairTicket) => OPEN_STATUSES.has(tk.status);
+
+const byOrder = (a: RepairTicket, b: RepairTicket) =>
+  a.queueOrder - b.queueOrder || a.displayQ - b.displayQ || a.reportedAt - b.reportedAt;
+
+/** Queue for ONE repair date, sorted by position. */
+export function getQueueForDate(tickets: RepairTicket[], date: string): RepairTicket[] {
+  return tickets.filter((tk) => inQueue(tk) && tk.repairDate === date).sort(byOrder);
+}
+
+/** Every queued ticket, grouped by date then position (compat helper). */
 export function getActiveTickets(tickets: RepairTicket[]): RepairTicket[] {
   return tickets
-    .filter((tk) => ACTIVE_STATUSES.has(tk.status))
-    .sort((a, b) => a.queueOrder - b.queueOrder);
+    .filter(inQueue)
+    .sort((a, b) => a.repairDate.localeCompare(b.repairDate) || byOrder(a, b));
+}
+
+/** Dates that have at least one open ticket, ascending. */
+export function getOpenDates(tickets: RepairTicket[]): string[] {
+  return [...new Set(tickets.filter(isOpenTicket).map((tk) => tk.repairDate))].sort();
+}
+
+/**
+ * Re-index positions (1..n) inside each repair date. Non-queue tickets get 0.
+ * Pure: returns new objects only where something changed.
+ */
+export function normalizeQueue(tickets: RepairTicket[]): RepairTicket[] {
+  const dates = new Set(tickets.filter(inQueue).map((tk) => tk.repairDate));
+  const pos = new Map<string, number>();
+  dates.forEach((d) => getQueueForDate(tickets, d).forEach((tk, i) => pos.set(tk.id, i + 1)));
+  return tickets.map((tk) => {
+    const want = pos.get(tk.id) ?? 0;
+    return tk.queueOrder === want ? tk : { ...tk, queueOrder: want };
+  });
+}
+
+/** Kept for older call sites. */
+export function recalcQueueOrder(tickets: RepairTicket[]): RepairTicket[] {
+  return normalizeQueue(tickets);
+}
+
+/** Position inside the ticket's own repair date (0 when not queued). */
+export function getQueuePosition(ticket: RepairTicket, tickets: RepairTicket[]): number {
+  if (!inQueue(ticket)) return 0;
+  return getQueueForDate(tickets, ticket.repairDate).findIndex((tk) => tk.id === ticket.id) + 1;
+}
+
+/** Next Q label for a repair date = highest Q already booked on that date + 1. */
+export function nextDisplayQ(tickets: RepairTicket[], date: string): number {
+  return tickets.filter((tk) => tk.repairDate === date).reduce((m, tk) => Math.max(m, tk.displayQ), 0) + 1;
+}
+
+const normRoom = (r: string) => r.replace(/\s+/g, '').toUpperCase();
+
+/** One active ticket per room per issue type. */
+export function findActiveDuplicate(
+  tickets: RepairTicket[],
+  room: string,
+  issueType: RepairTicket['issueType'],
+): RepairTicket | undefined {
+  return tickets.find(
+    (tk) => isOpenTicket(tk) && tk.issueType === issueType && normRoom(tk.room) === normRoom(room),
+  );
 }
 
 export function getCompletedToday(tickets: RepairTicket[]): number {
@@ -17,19 +80,6 @@ export function getCompletedToday(tickets: RepairTicket[]): number {
       tk.status === 'completed' &&
       tk.reportedAt >= startOfDay.getTime() - 1000 * 60 * 60 * 24,
   ).length;
-}
-
-export function recalcQueueOrder(tickets: RepairTicket[]): RepairTicket[] {
-  const active = getActiveTickets(tickets);
-  active.forEach((tk, i) => {
-    tk.queueOrder = i + 1;
-  });
-  return [...tickets];
-}
-
-export function getQueuePosition(ticket: RepairTicket, tickets: RepairTicket[]): number {
-  const active = getActiveTickets(tickets);
-  return active.findIndex((tk) => tk.id === ticket.id) + 1;
 }
 
 export function getEstimatedTime(queuePosition: number, lang: Language): string {

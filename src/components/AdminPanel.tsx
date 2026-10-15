@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Check,
   X,
+  AlertTriangle,
   Play,
   RotateCcw,
   GripVertical,
@@ -19,16 +20,24 @@ import { TECHNICIANS, TECHNICIAN_MAP, ISSUE_EMOJI } from '@/lib/constants';
 import {
   formatTimeAgo,
   getActiveTickets,
+  getOpenDates,
+  getQueueForDate,
   getQueuePosition,
+  isOpenTicket,
+  inQueue,
 } from '@/lib/queue';
+import { formatBookingDate, todayISO } from '@/lib/dates';
+import { MarkFixedModal, CloseTicketModal } from './AdminModals';
 import type { RepairTicket } from '@/types';
 import { NotificationList } from './LineNotification';
-import { NoteHistory } from './TicketActions';
+import { LineLogPanel, SimulatedBadge } from './LineMessagePreview';
+import { NoteHistory, UrgentBanner } from './TicketActions';
 import { AdminCoreEditModal } from './AdminCoreEditModal';
-import { formatDay, priorityLabel } from '@/lib/history';
+import { formatStamp, priorityLabel } from '@/lib/history';
 
 const STATUS_KEY: Record<string, string> = {
   in_progress: 'statusInProgress',
+  waiting_confirm: 'statusWaitingConfirm',
   assigned: 'statusAssigned',
   queued: 'statusQueued',
   waiting: 'statusWaiting',
@@ -42,8 +51,6 @@ export function AdminPanel() {
     t,
     lang,
     logoutAdmin,
-    completeRepair,
-    closeTicket,
     moveTicket,
     reorderTickets,
     assignTechnician,
@@ -52,16 +59,26 @@ export function AdminPanel() {
     notifications,
     cancelLog,
   } = useApp();
-  const [confirmComplete, setConfirmComplete] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [fixedId, setFixedId] = useState<string | null>(null);
+  const [closeId, setCloseId] = useState<string | null>(null);
   const [showReset, setShowReset] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const active = getActiveTickets(tickets);
-  const completed = tickets.filter(
-    (tk) => tk.status === 'completed' || tk.status === 'closed',
-  );
-  const ordered = [...active, ...completed];
+  // Admin works one repair date at a time - Oct 14's queue never mixes with Oct 18's.
+  const today = todayISO();
+  const openDates = getOpenDates(tickets);
+  const dates = [...new Set([...openDates, today])].sort();
+  const defaultDate = openDates.length === 0 || openDates.includes(today) ? today : (openDates.find((d) => d >= today) ?? openDates[0]);
+  const date = selectedDate ?? defaultDate;
+  const queue = getQueueForDate(tickets, date);
+  const waitingConfirm = tickets.filter((tk) => tk.repairDate === date && tk.status === 'waiting_confirm');
+  const done = tickets.filter((tk) => tk.repairDate === date && (tk.status === 'completed' || tk.status === 'closed'));
+  const ordered = [...queue, ...waitingConfirm, ...done];
+  const countFor = (d: string) => tickets.filter((tk) => tk.repairDate === d && isOpenTicket(tk)).length;
+  const fixedTicket = tickets.find((tk) => tk.id === fixedId);
+  const closeTicketRow = tickets.find((tk) => tk.id === closeId);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-5">
@@ -92,7 +109,10 @@ export function AdminPanel() {
         <AdminStats tickets={tickets} t={t} lang={lang} />
       </div>
 
-      {/* LINE notifications */}
+      {/* LINE notification log (resident confirmed / not fixed arrive here) */}
+      <LineLogPanel />
+
+      {/* LINE queue-move notifications */}
       {notifications.length > 0 && (
         <div className="mb-4">
           <div className="mb-2 flex items-center gap-2">
@@ -115,7 +135,7 @@ export function AdminPanel() {
             {cancelLog.slice(0, 5).map((c) => (
               <div key={c.id} className="rounded-xl border border-red-100 bg-red-50 p-2.5">
                 <p className="text-xs font-bold text-neutral-700">
-                  {c.room} · Q{c.queueNumber} · {ISSUE_EMOJI[c.issueType]}
+                  {c.room} · {c.ticketId ?? ''} · Q{c.queueNumber} · {ISSUE_EMOJI[c.issueType]}
                   <span className="ml-1 font-medium text-neutral-400">{formatTimeAgo(c.timestamp, lang)}</span>
                 </p>
                 <p className={`mt-0.5 break-words text-xs text-neutral-600 ${lang === 'th' ? 'font-thai' : ''}`}>
@@ -126,6 +146,36 @@ export function AdminPanel() {
           </div>
         </div>
       )}
+
+      {/* Repair-date filter: one queue per date */}
+      <div className="mb-3">
+        <p className={`mb-1.5 text-xs font-semibold text-neutral-500 ${lang === 'th' ? 'font-thai' : ''}`}>
+          {t('queueForDate')} {formatBookingDate(date, lang)}
+        </p>
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+          {dates.map((d) => (
+            <button
+              key={d}
+              onClick={() => setSelectedDate(d)}
+              className={`shrink-0 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors ${
+                d === date
+                  ? 'border-primary-400 bg-primary-400 text-white'
+                  : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50'
+              } ${lang === 'th' ? 'font-thai' : ''}`}
+            >
+              {formatBookingDate(d, lang)}
+              <span className={`ml-1 ${d === date ? 'text-white/80' : 'text-neutral-400'}`}>({countFor(d)})</span>
+            </button>
+          ))}
+          <input
+            type="date"
+            aria-label={t('pickDate')}
+            value={date}
+            onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+            className="shrink-0 rounded-xl border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-600 outline-none focus:border-primary-400"
+          />
+        </div>
+      </div>
 
       {/* Queue reorder hint */}
       <p className={`mb-2 text-xs font-medium text-neutral-400 ${lang === 'th' ? 'font-thai' : ''}`}>
@@ -138,7 +188,7 @@ export function AdminPanel() {
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white py-12">
             <span className="text-4xl">🎉</span>
             <p className={`mt-3 text-lg font-bold text-neutral-700 ${lang === 'th' ? 'font-thai' : ''}`}>
-              {t('noRepairsTitle')}
+              {t('noTicketsForDate')}
             </p>
           </div>
         ) : (
@@ -147,11 +197,9 @@ export function AdminPanel() {
               key={ticket.id}
               ticket={ticket}
               index={idx}
-              activeCount={active.length}
-              confirmComplete={confirmComplete}
-              setConfirmComplete={setConfirmComplete}
-              onComplete={completeRepair}
-              onClose={closeTicket}
+              activeCount={queue.length}
+              onMarkFixed={setFixedId}
+              onClose={setCloseId}
               onMove={moveTicket}
               onAssign={assignTechnician}
               onStart={startRepair}
@@ -164,6 +212,8 @@ export function AdminPanel() {
         )}
       </div>
 
+      {fixedTicket && <MarkFixedModal ticket={fixedTicket} onClose={() => setFixedId(null)} />}
+      {closeTicketRow && <CloseTicketModal ticket={closeTicketRow} onClose={() => setCloseId(null)} />}
       {editingId && <AdminCoreEditModal ticketId={editingId} onClose={() => setEditingId(null)} />}
 
       {/* Reset confirm modal */}
@@ -255,9 +305,7 @@ interface AdminTicketRowProps {
   ticket: RepairTicket;
   index: number;
   activeCount: number;
-  confirmComplete: string | null;
-  setConfirmComplete: (id: string | null) => void;
-  onComplete: (id: string) => void;
+  onMarkFixed: (id: string) => void;
   onClose: (id: string) => void;
   onMove: (id: string, direction: 'up' | 'down') => void;
   onAssign: (id: string, techId: string) => void;
@@ -272,9 +320,7 @@ function AdminTicketRow({
   ticket,
   index,
   activeCount,
-  confirmComplete,
-  setConfirmComplete,
-  onComplete,
+  onMarkFixed,
   onClose,
   onMove,
   onAssign,
@@ -287,25 +333,19 @@ function AdminTicketRow({
   const { tickets, t, lang } = useApp();
   const [isOver, setIsOver] = useState(false);
   const position = getQueuePosition(ticket, tickets);
-  const isActive =
-    ticket.status === 'in_progress' ||
-    ticket.status === 'assigned' ||
-    ticket.status === 'queued' ||
-    ticket.status === 'waiting';
+  const isActive = inQueue(ticket);
+  const isOpen = isOpenTicket(ticket);
+  const awaitingResident = ticket.status === 'waiting_confirm';
+  const sentLine = [...ticket.lineLog].reverse().find((l) => l.type === 'markFixed');
+  // Latest "still broken" answer from the resident (shown until juristic marks it fixed again).
+  const lastEntry = ticket.history[ticket.history.length - 1];
+  const rejected =
+    ticket.status === 'in_progress' && lastEntry?.by === 'resident' && lastEntry.to === 'in_progress' ? lastEntry : null;
   const tech = ticket.technicianId ? TECHNICIAN_MAP[ticket.technicianId] : null;
 
   // Drag & drop reorder (desktop). The in-progress repair stays pinned at the top.
   const canDrag = isActive && ticket.status !== 'in_progress';
   const dragging = dragId !== null && dragId !== ticket.id;
-
-  const handleComplete = () => {
-    if (confirmComplete === ticket.id) {
-      onComplete(ticket.id);
-      setConfirmComplete(null);
-    } else {
-      setConfirmComplete(ticket.id);
-    }
-  };
 
   const issueLabelKey = `issue${ticket.issueType.charAt(0).toUpperCase() + ticket.issueType.slice(1).replace(/_./g, (m) => m[1].toUpperCase())}`;
 
@@ -347,17 +387,17 @@ function AdminTicketRow({
     >
       <div className="flex items-start gap-3">
         {/* Drag handle + queue number */}
-        {isActive ? (
+        {isOpen ? (
           <div className="flex shrink-0 flex-col items-center gap-1">
             <GripVertical
               size={14}
               className={canDrag ? 'cursor-grab text-neutral-400' : 'text-neutral-200'}
               aria-hidden
             />
-            <div className="flex h-10 w-10 flex-col items-center justify-center rounded-lg bg-primary-50">
-              <span className="text-[8px] font-semibold uppercase text-primary-500">Q</span>
-              <span className="text-base font-extrabold leading-none text-primary-600">
-                #{position}
+            <div className="flex h-11 w-11 flex-col items-center justify-center rounded-lg bg-primary-50">
+              <span className="text-base font-extrabold leading-none text-primary-600">Q{ticket.displayQ}</span>
+              <span className="mt-0.5 text-[8px] font-semibold text-primary-500">
+                {position > 0 ? `${t('positionShort')} #${position}` : '✓?'}
               </span>
             </div>
           </div>
@@ -371,6 +411,7 @@ function AdminTicketRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-neutral-800">{ticket.room}</span>
+            <span className="text-[10px] font-medium text-neutral-400">{ticket.ticketId}</span>
             {ticket.isYou && (
               <span className="rounded bg-primary-400 px-1.5 py-0.5 text-[10px] font-bold text-white">
                 {t('yourTicket')}
@@ -390,20 +431,46 @@ function AdminTicketRow({
             {tech && ` • ${tech.avatar} ${tech.name}`}
           </p>
 
-          {(ticket.priority !== 'normal' || ticket.scheduledDate) && (
+          {(ticket.priority !== 'normal' || ticket.repairDate) && (
             <p className={`mt-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold ${lang === 'th' ? 'font-thai' : ''}`}>
               {ticket.priority !== 'normal' && (
                 <span className={`rounded-md px-1.5 py-0.5 ${ticket.priority === 'urgent' ? 'bg-red-100 text-red-600' : 'bg-primary-100 text-primary-700'}`}>
                   {priorityLabel(ticket.priority, lang)}
                 </span>
               )}
-              {ticket.scheduledDate && (
-                <span className="flex items-center gap-1 text-neutral-500">
-                  <CalendarDays size={11} />
-                  {formatDay(ticket.scheduledDate, lang)}
-                </span>
-              )}
+              <span className="flex items-center gap-1 text-neutral-500">
+                <CalendarDays size={11} />
+                {formatBookingDate(ticket.repairDate, lang)}
+              </span>
             </p>
+          )}
+          <UrgentBanner ticket={ticket} />
+          {rejected && (
+            <div className={`mt-2 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 ${lang === 'th' ? 'font-thai' : ''}`}>
+              <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-500" />
+              <div className="text-xs leading-snug text-red-700">
+                <p className="font-bold">{t('residentRejected')}</p>
+                {rejected.reason && <p className="break-words">{rejected.reason}</p>}
+                {rejected.photos && rejected.photos.length > 0 && (
+                  <div className="mt-1.5 flex gap-1.5 overflow-x-auto scrollbar-hide">
+                    {rejected.photos.map((src, i) => (
+                      <img key={i} src={src} alt="" className="h-14 w-14 shrink-0 rounded-lg border border-red-200 object-cover" />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {awaitingResident && (
+            <div className={`mt-2 rounded-xl bg-accent-50 px-3 py-2 text-xs font-semibold text-accent-700 ${lang === 'th' ? 'font-thai' : ''}`}>
+              <p>{t('waitingConfirmAdmin')}</p>
+              {sentLine && (
+                <p className="mt-1 flex flex-wrap items-center gap-1.5 font-medium text-accent-600">
+                  {t('lineSentAt', { time: formatStamp(sentLine.sentAt, lang) })}
+                  {sentLine.simulated && <SimulatedBadge />}
+                </p>
+              )}
+            </div>
           )}
           {ticket.title && (
             <p className={`mt-1 text-sm font-semibold text-neutral-800 ${lang === 'th' ? 'font-thai' : ''}`}>
@@ -425,10 +492,10 @@ function AdminTicketRow({
           <NoteHistory ticket={ticket} />
 
           {/* Action buttons */}
-          {isActive && (
+          {isOpen && (
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
               {/* Move up/down */}
-              {ticket.status !== 'in_progress' && (
+              {isActive && ticket.status !== 'in_progress' && (
                 <div className="flex items-center gap-0.5">
                   <button
                     onClick={() => onMove(ticket.id, 'up')}
@@ -450,7 +517,7 @@ function AdminTicketRow({
               )}
 
               {/* Assign technician */}
-              {ticket.status !== 'in_progress' && (
+              {isActive && ticket.status !== 'in_progress' && (
                 <select
                   value={ticket.technicianId ?? ''}
                   onChange={(e) => onAssign(ticket.id, e.target.value)}
@@ -476,18 +543,14 @@ function AdminTicketRow({
                 </button>
               )}
 
-              {/* Complete (for in_progress) */}
-              {ticket.status === 'in_progress' && (
+              {/* Step 1 of dual-confirm: no direct Complete - juristic marks it fixed with a photo */}
+              {(ticket.status === 'in_progress' || ticket.status === 'assigned') && (
                 <button
-                  onClick={handleComplete}
-                  className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold transition-colors ${
-                    confirmComplete === ticket.id
-                      ? 'bg-red-500 text-white hover:bg-red-600'
-                      : 'bg-accent-500 text-white hover:bg-accent-600'
-                  } ${lang === 'th' ? 'font-thai' : ''}`}
+                  onClick={() => onMarkFixed(ticket.id)}
+                  className={`flex items-center gap-1 rounded-lg bg-accent-500 px-2 py-1 text-[11px] font-bold text-white transition-colors hover:bg-accent-600 ${lang === 'th' ? 'font-thai' : ''}`}
                 >
                   <Check size={12} strokeWidth={3} />
-                  {confirmComplete === ticket.id ? t('confirmComplete') : t('complete')}
+                  {t('markFixedBtn')}
                 </button>
               )}
 
